@@ -1,0 +1,1 @@
+./stereo_inertial_euroc /home/liuyang/MySLAM/Dataset/EuRoC/Vocabulary/ORBvoc.txt /home/liuyang/MySLAM/ORB_SLAM3/Examples/Stereo-Inertial/EuRoC.yaml /home/liuyang/MySLAM/Dataset/EuRoC/MH_01_easy /home/liuyang/MySLAM/ORB_SLAM3/Examples/Stereo-Inertial/EuRoC_TimeStamps/MH01.txt
