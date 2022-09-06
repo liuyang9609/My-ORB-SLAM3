@@ -93,4 +93,6 @@ borrar/*
 *.[oa]
 *~
 
+/lib/libORB_SLAM3.so
+
 */ExecMean.txt
