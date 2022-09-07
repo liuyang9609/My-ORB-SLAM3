@@ -1516,7 +1516,7 @@ Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat 
             cvtColor(imGrayRight,imGrayRight,cv::COLOR_BGR2GRAY);
         }
     }
-    else if(mImGray.channels()==4)
+    else if(mImGray.channels()==4) //RGBA中A是指透明度Alpha
     {
         //cout << "Image with 4 channels" << endl;
         if(mbRGB)
@@ -1553,10 +1553,10 @@ Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat 
 #endif
 
     //cout << "Tracking start" << endl;
-    Track();
+    Track(); //跟踪
     //cout << "Tracking end" << endl;
 
-    return mCurrentFrame.GetPose();
+    return mCurrentFrame.GetPose(); //返回当前位姿
 }
 
 
@@ -1657,17 +1657,18 @@ Sophus::SE3f Tracking::GrabImageMonocular(const cv::Mat &im, const double &times
     return mCurrentFrame.GetPose();
 }
 
-
+//抓取IMU数据
 void Tracking::GrabImuData(const IMU::Point &imuMeasurement)
 {
     unique_lock<mutex> lock(mMutexImuQueue);
     mlQueueImuData.push_back(imuMeasurement);
 }
 
+//IMU预积分
 void Tracking::PreintegrateIMU()
 {
 
-    if(!mCurrentFrame.mpPrevFrame)
+    if(!mCurrentFrame.mpPrevFrame) //没有上一帧直接返回，不积分
     {
         Verbose::PrintMess("non prev frame ", Verbose::VERBOSITY_NORMAL);
         mCurrentFrame.setIntegrated();
@@ -1675,8 +1676,8 @@ void Tracking::PreintegrateIMU()
     }
 
     mvImuFromLastFrame.clear();
-    mvImuFromLastFrame.reserve(mlQueueImuData.size());
-    if(mlQueueImuData.size() == 0)
+    mvImuFromLastFrame.reserve(mlQueueImuData.size()); //预分配大小
+    if(mlQueueImuData.size() == 0) //没有IMU数据，不积分
     {
         Verbose::PrintMess("Not IMU data in mlQueueImuData!!", Verbose::VERBOSITY_NORMAL);
         mCurrentFrame.setIntegrated();
@@ -1692,13 +1693,13 @@ void Tracking::PreintegrateIMU()
             {
                 IMU::Point* m = &mlQueueImuData.front();
                 cout.precision(17);
-                if(m->t<mCurrentFrame.mpPrevFrame->mTimeStamp-mImuPer)
+                if(m->t < mCurrentFrame.mpPrevFrame->mTimeStamp-mImuPer) //判定IMU数据是否在两帧之间
                 {
                     mlQueueImuData.pop_front();
                 }
-                else if(m->t<mCurrentFrame.mTimeStamp-mImuPer)
+                else if(m->t < mCurrentFrame.mTimeStamp-mImuPer)
                 {
-                    mvImuFromLastFrame.push_back(*m);
+                    mvImuFromLastFrame.push_back(*m); //将两帧之间的IMU数据保存至此
                     mlQueueImuData.pop_front();
                 }
                 else
@@ -1717,19 +1718,21 @@ void Tracking::PreintegrateIMU()
             usleep(500);
     }
 
-    const int n = mvImuFromLastFrame.size()-1;
+    const int n = mvImuFromLastFrame.size()-1; //需要积分的IMU数据量
     if(n==0){
         cout << "Empty IMU measurements vector!!!\n";
         return;
     }
 
+    //构造预积分器（当前帧与上一帧）
     IMU::Preintegrated* pImuPreintegratedFromLastFrame = new IMU::Preintegrated(mLastFrame.mImuBias,mCurrentFrame.mImuCalib);
 
+    //n个IMU数据，计算n-1次预积分量
     for(int i=0; i<n; i++)
     {
         float tstep;
         Eigen::Vector3f acc, angVel;
-        if((i==0) && (i<(n-1)))
+        if((i==0) && (i<(n-1))) //i==0 n>1
         {
             float tab = mvImuFromLastFrame[i+1].t-mvImuFromLastFrame[i].t;
             float tini = mvImuFromLastFrame[i].t-mCurrentFrame.mpPrevFrame->mTimeStamp;
@@ -1764,20 +1767,23 @@ void Tracking::PreintegrateIMU()
 
         if (!mpImuPreintegratedFromLastKF)
             cout << "mpImuPreintegratedFromLastKF does not exist" << endl;
-        mpImuPreintegratedFromLastKF->IntegrateNewMeasurement(acc,angVel,tstep);
-        pImuPreintegratedFromLastFrame->IntegrateNewMeasurement(acc,angVel,tstep);
+        mpImuPreintegratedFromLastKF->IntegrateNewMeasurement(acc,angVel,tstep); //计算上一关键帧到当前帧的预积分结果
+        pImuPreintegratedFromLastFrame->IntegrateNewMeasurement(acc,angVel,tstep); //计算上一帧到当前帧的预积分结果
     }
 
+    //记录预积分结果
     mCurrentFrame.mpImuPreintegratedFrame = pImuPreintegratedFromLastFrame;
     mCurrentFrame.mpImuPreintegrated = mpImuPreintegratedFromLastKF;
     mCurrentFrame.mpLastKeyFrame = mpLastKeyFrame;
 
-    mCurrentFrame.setIntegrated();
+    mCurrentFrame.setIntegrated(); //设置为已积分状态
 
     //Verbose::PrintMess("Preintegration is finished!! ", Verbose::VERBOSITY_DEBUG);
 }
 
-
+//利用IMU计算位姿，用到此函数的两种情况：
+//视觉跟丢时用IMU预测位姿
+//IMU模式恒速模型跟踪提供初始位姿
 bool Tracking::PredictStateIMU()
 {
     if(!mCurrentFrame.mpPrevFrame)
@@ -1786,11 +1792,11 @@ bool Tracking::PredictStateIMU()
         return false;
     }
 
-    if(mbMapUpdated && mpLastKeyFrame)
+    if(mbMapUpdated && mpLastKeyFrame) //地图更新并且有关键帧，利用上一关键帧和距离上一关键帧的预积分，原因是现在距离关键帧更近
     {
-        const Eigen::Vector3f twb1 = mpLastKeyFrame->GetImuPosition();
-        const Eigen::Matrix3f Rwb1 = mpLastKeyFrame->GetImuRotation();
-        const Eigen::Vector3f Vwb1 = mpLastKeyFrame->GetVelocity();
+        const Eigen::Vector3f twb1 = mpLastKeyFrame->GetImuPosition(); //IMU到世界系的平移
+        const Eigen::Matrix3f Rwb1 = mpLastKeyFrame->GetImuRotation(); //IMU到世界系的旋转
+        const Eigen::Vector3f Vwb1 = mpLastKeyFrame->GetVelocity();    //IMU到世界系的速度
 
         const Eigen::Vector3f Gz(0, 0, -IMU::GRAVITY_VALUE);
         const float t12 = mpImuPreintegratedFromLastKF->dT;
@@ -1804,7 +1810,7 @@ bool Tracking::PredictStateIMU()
         mCurrentFrame.mPredBias = mCurrentFrame.mImuBias;
         return true;
     }
-    else if(!mbMapUpdated)
+    else if(!mbMapUpdated) //地图未更新，利用上一帧和距离上一帧的预积分，原因是现在距离上一帧更近
     {
         const Eigen::Vector3f twb1 = mLastFrame.GetImuPosition();
         const Eigen::Matrix3f Rwb1 = mLastFrame.GetImuRotation();
