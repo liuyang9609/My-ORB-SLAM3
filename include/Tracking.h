@@ -123,7 +123,7 @@ public:
         NO_IMAGES_YET=0,
         NOT_INITIALIZED=1,
         OK=2,
-        RECENTLY_LOST=3,
+        RECENTLY_LOST=3, //当前丢失，如果超过5s需要置为LOST
         LOST=4,
         OK_KLT=5
     };
