@@ -52,48 +52,50 @@
 
 
 namespace ORB_SLAM3 {
+    //3D-2D匹配
     MLPnPsolver::MLPnPsolver(const Frame &F, const vector<MapPoint *> &vpMapPointMatches):
             mnInliersi(0), mnIterations(0), mnBestInliers(0), N(0), mpCamera(F.mpCamera){
-        mvpMapPointMatches = vpMapPointMatches;
-        mvBearingVecs.reserve(F.mvpMapPoints.size());
-        mvP2D.reserve(F.mvpMapPoints.size());
-        mvSigma2.reserve(F.mvpMapPoints.size());
-        mvP3Dw.reserve(F.mvpMapPoints.size());
-        mvKeyPointIndices.reserve(F.mvpMapPoints.size());
-        mvAllIndices.reserve(F.mvpMapPoints.size());
+        mvpMapPointMatches = vpMapPointMatches; //匹配的地图点
+        mvBearingVecs.reserve(F.mvpMapPoints.size()); //bearing vector，即3D点在相机坐标系下的方向向量
+        mvP2D.reserve(F.mvpMapPoints.size()); //匹配的2D点
+        mvSigma2.reserve(F.mvpMapPoints.size()); //卡方检验中的sigma值，根据每个关键点所在的层数不同而不同
+        mvP3Dw.reserve(F.mvpMapPoints.size()); //3D点在世界坐标系下的坐标
+        mvKeyPointIndices.reserve(F.mvpMapPoints.size()); //匹配的关键点索引，不连续（因为有的索引并没有匹配）
+        mvAllIndices.reserve(F.mvpMapPoints.size()); //连续的索引，从0到匹配数-1
 
         int idx = 0;
+        //遍历所有匹配的地图点，计算MLPnP相关的量
         for(size_t i = 0, iend = mvpMapPointMatches.size(); i < iend; i++){
-            MapPoint* pMP = vpMapPointMatches[i];
+            MapPoint* pMP = vpMapPointMatches[i]; //取出地图点
 
             if(pMP){
                 if(!pMP -> isBad()){
                     if(i >= F.mvKeysUn.size()) continue;
-                    const cv::KeyPoint &kp = F.mvKeysUn[i];
+                    const cv::KeyPoint &kp = F.mvKeysUn[i]; //地图点对应的2D点
 
-                    mvP2D.push_back(kp.pt);
-                    mvSigma2.push_back(F.mvLevelSigma2[kp.octave]);
+                    mvP2D.push_back(kp.pt); //保存2D点坐标
+                    mvSigma2.push_back(F.mvLevelSigma2[kp.octave]); //根据所在层保存2D点的sigma值
 
                     //Bearing vector should be normalized
-                    cv::Point3f cv_br = mpCamera->unproject(kp.pt);
-                    cv_br /= cv_br.z;
+                    cv::Point3f cv_br = mpCamera->unproject(kp.pt); //反投影，得到相机坐标系下3D点坐标(即bearing vector)
+                    cv_br /= cv_br.z; //单位化
                     bearingVector_t br(cv_br.x,cv_br.y,cv_br.z);
-                    mvBearingVecs.push_back(br);
+                    mvBearingVecs.push_back(br); //保存bearing vector
 
                     //3D coordinates
-                    Eigen::Matrix<float,3,1> posEig = pMP -> GetWorldPos();
+                    Eigen::Matrix<float,3,1> posEig = pMP -> GetWorldPos(); //地图点的3D坐标
                     point_t pos(posEig(0),posEig(1),posEig(2));
-                    mvP3Dw.push_back(pos);
+                    mvP3Dw.push_back(pos); //保存3D点世界坐标系下的坐标
 
-                    mvKeyPointIndices.push_back(i);
-                    mvAllIndices.push_back(idx);
+                    mvKeyPointIndices.push_back(i); //关键点索引，有的i是不会被保存的（当PMP坏的时候）
+                    mvAllIndices.push_back(idx); //从0开始连续的索引
 
                     idx++;
                 }
             }
         }
 
-        SetRansacParameters();
+        SetRansacParameters(); //设置Ransac参数，包括最小集、迭代次数、最小内点数、每个点的最大误差等
     }
 
     //RANSAC methods
@@ -259,6 +261,7 @@ namespace ORB_SLAM3 {
 	        mvMaxError[i] = mvSigma2[i]*th2;
 	}
 
+    //检查内点数
     void MLPnPsolver::CheckInliers(){
         mnInliersi=0;
 
@@ -273,21 +276,21 @@ namespace ORB_SLAM3 {
             float zc = mRi[2][0]*P3Dw.x+mRi[2][1]*P3Dw.y+mRi[2][2]*P3Dw.z+mti[2];
 
             cv::Point3f P3Dc(xc,yc,zc);
-            cv::Point2f uv = mpCamera->project(P3Dc);
+            cv::Point2f uv = mpCamera->project(P3Dc); //将相机坐标系3D点投影至2D平面
 
             float distX = P2D.x-uv.x;
             float distY = P2D.y-uv.y;
 
-            float error2 = distX*distX+distY*distY;
+            float error2 = distX*distX+distY*distY; //计算投影坐标和观测值的误差
 
-            if(error2<mvMaxError[i])
+            if(error2<mvMaxError[i]) //误差范围内，标记该点为内点，内点数+1
             {
                 mvbInliersi[i]=true;
                 mnInliersi++;
             }
             else
             {
-                mvbInliersi[i]=false;
+                mvbInliersi[i]=false; //误差超过范围，标记为外点
             }
         }
     }

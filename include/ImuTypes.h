@@ -52,9 +52,9 @@ public:
     Point(const cv::Point3f Acc, const cv::Point3f Gyro, const double &timestamp):
         a(Acc.x,Acc.y,Acc.z), w(Gyro.x,Gyro.y,Gyro.z), t(timestamp){}
 public:
-    Eigen::Vector3f a;
-    Eigen::Vector3f w;
-    double t;
+    Eigen::Vector3f a; //加速度
+    Eigen::Vector3f w; //角速度
+    double t;          //时间戳
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
 
@@ -79,12 +79,12 @@ public:
     Bias(const float &b_acc_x, const float &b_acc_y, const float &b_acc_z,
             const float &b_ang_vel_x, const float &b_ang_vel_y, const float &b_ang_vel_z):
             bax(b_acc_x), bay(b_acc_y), baz(b_acc_z), bwx(b_ang_vel_x), bwy(b_ang_vel_y), bwz(b_ang_vel_z){}
-    void CopyFrom(Bias &b);
+    void CopyFrom(Bias &b); //复制b
     friend std::ostream& operator<< (std::ostream &out, const Bias &b);
 
 public:
-    float bax, bay, baz;
-    float bwx, bwy, bwz;
+    float bax, bay, baz; //加速度三个方向上的bias
+    float bwx, bwy, bwz; //角速度三个方向上的bias
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
 
@@ -119,9 +119,9 @@ public:
 
 public:
     // Sophus/Eigen implementation
-    Sophus::SE3<float> mTcb;
-    Sophus::SE3<float> mTbc;
-    Eigen::DiagonalMatrix<float,6> Cov, CovWalk;
+    Sophus::SE3<float> mTcb; //body系到相机系的变换矩阵
+    Sophus::SE3<float> mTbc; //相机系到body系的变换矩阵
+    Eigen::DiagonalMatrix<float,6> Cov, CovWalk; //IMU数据高斯噪声协方差，IMU bias随机游走协方差，均是6*6,通过标定得到
     bool mbIsSet;
 };
 
@@ -208,17 +208,23 @@ public:
     }
 
 public:
-    float dT;
-    Eigen::Matrix<float,15,15> C;
-    Eigen::Matrix<float,15,15> Info;
+    float dT; //时间间隔
+    Eigen::Matrix<float,15,15> C; //协方差传递所需的AB矩阵，A为左上角9*9,B为右下角6*6
+    Eigen::Matrix<float,15,15> Info; //信息矩阵
     Eigen::DiagonalMatrix<float,6> Nga, NgaWalk;
 
     // Values for the original bias (when integration was computed)
     Bias b;
-    Eigen::Matrix3f dR;
-    Eigen::Vector3f dV, dP;
-    Eigen::Matrix3f JRg, JVg, JVa, JPg, JPa;
-    Eigen::Vector3f avgA, avgW;
+    Eigen::Matrix3f dR; //旋转预积分
+    Eigen::Vector3f dV; //速度预积分
+    Eigen::Vector3f dP; //位置预积分
+    Eigen::Matrix3f JRg; //旋转预积分对delta(bg)的雅克比
+    Eigen::Matrix3f JVg; //速度预积分对delta(bg)的雅克比
+    Eigen::Matrix3f JVa; //速度预积分对delta(ba)的雅克比
+    Eigen::Matrix3f JPg; //位置预积分对delta(bg)的雅克比
+    Eigen::Matrix3f JPa; //位置预积分对delta(ba)的雅克比
+    Eigen::Vector3f avgA; //平均加速度，用于判断加速度是否变化
+    Eigen::Vector3f avgW; //平均角速度
 
 
 private:

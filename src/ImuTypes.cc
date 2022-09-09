@@ -81,24 +81,29 @@ Eigen::Matrix3f InverseRightJacobianSO3(const Eigen::Vector3f &v)
     return InverseRightJacobianSO3(v(0),v(1),v(2));
 }
 
+//为了根据角速度计算deltaR（单位时间内的旋转）以及相应的右乘雅克比Jr
 IntegratedRotation::IntegratedRotation(const Eigen::Vector3f &angVel, const Bias &imuBias, const float &time) {
+    //角速度减去偏置乘时间，构成xyz旋转向量
     const float x = (angVel(0)-imuBias.bwx)*time;
     const float y = (angVel(1)-imuBias.bwy)*time;
     const float z = (angVel(2)-imuBias.bwz)*time;
 
+    //计算旋转向量的模
     const float d2 = x*x+y*y+z*z;
     const float d = sqrt(d2);
 
     Eigen::Vector3f v;
     v << x, y, z;
-    Eigen::Matrix3f W = Sophus::SO3f::hat(v);
-    if(d<eps)
+    Eigen::Matrix3f W = Sophus::SO3f::hat(v); //反对称
+    if(d<eps) //旋转较小时，旋转向量到旋转矩阵的指数映射采用一阶近似
     {
+        //参看forster论文公式
         deltaR = Eigen::Matrix3f::Identity() + W;
-        rightJ = Eigen::Matrix3f::Identity();
+        rightJ = Eigen::Matrix3f::Identity(); //小量时，右扰动Jr=I
     }
     else
     {
+        //参看forster论文公式
         deltaR = Eigen::Matrix3f::Identity() + W*sin(d)/d + W*W*(1.0f-cos(d))/d2;
         rightJ = Eigen::Matrix3f::Identity() - W*(1.0f-cos(d))/d2 + W*W*(d-sin(d))/(d2*d);
     }
@@ -106,9 +111,9 @@ IntegratedRotation::IntegratedRotation(const Eigen::Vector3f &angVel, const Bias
 
 Preintegrated::Preintegrated(const Bias &b_, const Calib &calib)
 {
-    Nga = calib.Cov;
-    NgaWalk = calib.CovWalk;
-    Initialize(b_);
+    Nga = calib.Cov; //从标定得到IMU数据协方差矩阵
+    NgaWalk = calib.CovWalk; //从标定得到bias随机游走协方差矩阵
+    Initialize(b_); //根据bias初始化预积分相关变量，bias改变时预积分会改变
 }
 
 // Copy constructor
@@ -174,8 +179,10 @@ void Preintegrated::Reintegrate()
         IntegrateNewMeasurement(aux[i].a,aux[i].w,aux[i].t);
 }
 
+//此部分对照forster论文看
 void Preintegrated::IntegrateNewMeasurement(const Eigen::Vector3f &acceleration, const Eigen::Vector3f &angVel, const float &dt)
 {
+    //将IMU数据构成一个integrable结构体保存到mvMeasurements
     mvMeasurements.push_back(integrable(acceleration,angVel,dt));
 
     // Position is updated firstly, as it depends on previously computed velocity and rotation.
@@ -278,8 +285,8 @@ IMU::Bias Preintegrated::GetDeltaBias(const Bias &b_)
     std::unique_lock<std::mutex> lock(mMutex);
     return IMU::Bias(b_.bax-b.bax,b_.bay-b.bay,b_.baz-b.baz,b_.bwx-b.bwx,b_.bwy-b.bwy,b_.bwz-b.bwz);
 }
-
-
+//bias更新后预积分量利用一阶近似模型更新，减少计算量
+//bias更新后新的旋转预积分
 Eigen::Matrix3f Preintegrated::GetDeltaRotation(const Bias &b_)
 {
     std::unique_lock<std::mutex> lock(mMutex);
@@ -287,7 +294,7 @@ Eigen::Matrix3f Preintegrated::GetDeltaRotation(const Bias &b_)
     dbg << b_.bwx-b.bwx,b_.bwy-b.bwy,b_.bwz-b.bwz;
     return NormalizeRotation(dR * Sophus::SO3f::exp(JRg * dbg).matrix());
 }
-
+//bias更新后新的速度预积分
 Eigen::Vector3f Preintegrated::GetDeltaVelocity(const Bias &b_)
 {
     std::unique_lock<std::mutex> lock(mMutex);
@@ -296,7 +303,7 @@ Eigen::Vector3f Preintegrated::GetDeltaVelocity(const Bias &b_)
     dba << b_.bax-b.bax,b_.bay-b.bay,b_.baz-b.baz;
     return dV + JVg * dbg + JVa * dba;
 }
-
+//bias更新后新的位置预积分
 Eigen::Vector3f Preintegrated::GetDeltaPosition(const Bias &b_)
 {
     std::unique_lock<std::mutex> lock(mMutex);
@@ -394,6 +401,7 @@ std::ostream& operator<< (std::ostream &out, const Bias &b)
 
 void Calib::Set(const Sophus::SE3<float> &sophTbc, const float &ng, const float &na, const float &ngw, const float &naw) {
     mbIsSet = true;
+    //输入都是IMU的标定参数，用他们来构造协方差矩阵，在预积分使用
     const float ng2 = ng*ng;
     const float na2 = na*na;
     const float ngw2 = ngw*ngw;
