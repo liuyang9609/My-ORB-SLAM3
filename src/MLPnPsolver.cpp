@@ -327,7 +327,7 @@ namespace ORB_SLAM3 {
         //Result
         transformation_t result;
 
-        // Compute camera pose
+        // Compute camera pose 利用最小集计算位姿
         computePose(bearingVecs,p3DS,covs,indexes,result);
 
         // Check inliers

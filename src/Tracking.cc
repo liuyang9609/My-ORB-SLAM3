@@ -2388,17 +2388,17 @@ void Tracking::Track()
 
 void Tracking::StereoInitialization()
 {
-    if(mCurrentFrame.N>500)
+    if(mCurrentFrame.N>500) //特征点数量大于500
     {
         if (mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD)
         {
-            if (!mCurrentFrame.mpImuPreintegrated || !mLastFrame.mpImuPreintegrated)
+            if (!mCurrentFrame.mpImuPreintegrated || !mLastFrame.mpImuPreintegrated) //检查预积分
             {
                 cout << "not IMU meas" << endl;
                 return;
             }
 
-            if (!mFastInit && (mCurrentFrame.mpImuPreintegratedFrame->avgA-mLastFrame.mpImuPreintegratedFrame->avgA).norm()<0.5)
+            if (!mFastInit && (mCurrentFrame.mpImuPreintegratedFrame->avgA-mLastFrame.mpImuPreintegratedFrame->avgA).norm()<0.5) //检查加速度是否大于0.5
             {
                 cout << "not enough acceleration" << endl;
                 return;
@@ -2423,13 +2423,13 @@ void Tracking::StereoInitialization()
         else
             mCurrentFrame.SetPose(Sophus::SE3f());
 
-        // Create KeyFrame
+        // Create KeyFrame 将当前帧构造成关键帧
         KeyFrame* pKFini = new KeyFrame(mCurrentFrame,mpAtlas->GetCurrentMap(),mpKeyFrameDB);
 
-        // Insert KeyFrame in the map
+        // Insert KeyFrame in the map 将关键帧加入到Atlas
         mpAtlas->AddKeyFrame(pKFini);
 
-        // Create MapPoints and asscoiate to KeyFrame
+        // Create MapPoints and asscoiate to KeyFrame 生成初始的地图点
         if(!mpCamera2){
             for(int i=0; i<mCurrentFrame.N;i++)
             {
@@ -2439,10 +2439,10 @@ void Tracking::StereoInitialization()
                     Eigen::Vector3f x3D;
                     mCurrentFrame.UnprojectStereo(i, x3D);
                     MapPoint* pNewMP = new MapPoint(x3D, pKFini, mpAtlas->GetCurrentMap());
-                    pNewMP->AddObservation(pKFini,i);
+                    pNewMP->AddObservation(pKFini,i); //添加地图点和关键帧之间的连接关系
                     pKFini->AddMapPoint(pNewMP,i);
-                    pNewMP->ComputeDistinctiveDescriptors();
-                    pNewMP->UpdateNormalAndDepth();
+                    pNewMP->ComputeDistinctiveDescriptors(); //计算地图点最好的描述子
+                    pNewMP->UpdateNormalAndDepth(); //跟新平均观测方向和深度范围
                     mpAtlas->AddMapPoint(pNewMP);
 
                     mCurrentFrame.mvpMapPoints[i]=pNewMP;
@@ -2498,25 +2498,25 @@ void Tracking::StereoInitialization()
     }
 }
 
-
+//单目 or 单目IMU初始化
 void Tracking::MonocularInitialization()
 {
 
-    if(!mbReadyToInitializate)
+    if(!mbReadyToInitializate) //判断是否是第一帧
     {
         // Set Reference Frame
-        if(mCurrentFrame.mvKeys.size()>100)
+        if(mCurrentFrame.mvKeys.size()>100) //特征点大于100
         {
 
-            mInitialFrame = Frame(mCurrentFrame);
-            mLastFrame = Frame(mCurrentFrame);
-            mvbPrevMatched.resize(mCurrentFrame.mvKeysUn.size());
+            mInitialFrame = Frame(mCurrentFrame); //初始化帧
+            mLastFrame = Frame(mCurrentFrame); //设置为上一帧
+            mvbPrevMatched.resize(mCurrentFrame.mvKeysUn.size()); //第一帧的匹配点
             for(size_t i=0; i<mCurrentFrame.mvKeysUn.size(); i++)
-                mvbPrevMatched[i]=mCurrentFrame.mvKeysUn[i].pt;
+                mvbPrevMatched[i]=mCurrentFrame.mvKeysUn[i].pt; //所有关键点都放入匹配点
 
             fill(mvIniMatches.begin(),mvIniMatches.end(),-1);
 
-            if (mSensor == System::IMU_MONOCULAR)
+            if (mSensor == System::IMU_MONOCULAR) //如果有IMU还要新建IMU预积分求解器
             {
                 if(mpImuPreintegratedFromLastKF)
                 {
@@ -2534,6 +2534,7 @@ void Tracking::MonocularInitialization()
     }
     else
     {
+        //如果当前帧特征点数量小于100 或者 IMU模式的图像丢失超过1s，重新初始化
         if (((int)mCurrentFrame.mvKeys.size()<=100)||((mSensor == System::IMU_MONOCULAR)&&(mLastFrame.mTimeStamp-mInitialFrame.mTimeStamp>1.0)))
         {
             mbReadyToInitializate = false;
@@ -2541,12 +2542,12 @@ void Tracking::MonocularInitialization()
             return;
         }
 
-        // Find correspondences
+        // Find correspondences 找匹配点
         ORBmatcher matcher(0.9,true);
         int nmatches = matcher.SearchForInitialization(mInitialFrame,mCurrentFrame,mvbPrevMatched,mvIniMatches,100);
 
         // Check if there are enough correspondences
-        if(nmatches<100)
+        if(nmatches<100) //匹配点小于100,重新初始化
         {
             mbReadyToInitializate = false;
             return;
@@ -2555,9 +2556,10 @@ void Tracking::MonocularInitialization()
         Sophus::SE3f Tcw;
         vector<bool> vbTriangulated; // Triangulated Correspondences (mvIniMatches)
 
+        //如果求解位姿成功
         if(mpCamera->ReconstructWithTwoViews(mInitialFrame.mvKeysUn,mCurrentFrame.mvKeysUn,mvIniMatches,Tcw,mvIniP3D,vbTriangulated))
         {
-            for(size_t i=0, iend=mvIniMatches.size(); i<iend;i++)
+            for(size_t i=0, iend=mvIniMatches.size(); i<iend;i++) //删除没有成功三角化的点
             {
                 if(mvIniMatches[i]>=0 && !vbTriangulated[i])
                 {
@@ -2567,9 +2569,10 @@ void Tracking::MonocularInitialization()
             }
 
             // Set Frame Poses
+            //设置两帧的位姿
             mInitialFrame.SetPose(Sophus::SE3f());
             mCurrentFrame.SetPose(Tcw);
-
+            //根据三角化的结果，创建初始地图点
             CreateInitialMapMonocular();
         }
     }
